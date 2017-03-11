@@ -634,7 +634,7 @@ UA_Server * UA_Server_new(const UA_ServerConfig config) {
    cleanup.type = UA_JOBTYPE_METHODCALL;
    cleanup.job.methodCall.data = NULL;
    cleanup.job.methodCall.method = UA_Server_cleanup;
-    UA_Server_addRepeatedJob(server, cleanup, 10000, NULL);
+   UA_Server_addRepeatedJob(server, cleanup, 10000, NULL);
 
 #ifdef UA_ENABLE_DISCOVERY
     // Discovery service
@@ -1454,6 +1454,10 @@ UA_Server * UA_Server_new(const UA_ServerConfig config) {
     return server;
 }
 
+/*************/
+/* Discovery */
+/*************/
+
 #ifdef UA_ENABLE_DISCOVERY
 static UA_StatusCode
 register_server_with_discovery_server(UA_Server *server, const char* discoveryServerUrl,
@@ -1461,7 +1465,8 @@ register_server_with_discovery_server(UA_Server *server, const char* discoverySe
                                       const char* semaphoreFilePath) {
     /* Create the client */
     UA_Client *client = UA_Client_new(UA_ClientConfig_standard);
-    UA_StatusCode retval = UA_Client_connect(client, discoveryServerUrl != NULL ? discoveryServerUrl : "opc.tcp://localhost:4840");
+    const char *url = discoveryServerUrl != NULL ? discoveryServerUrl : "opc.tcp://localhost:4840";
+    UA_StatusCode retval = UA_Client_connect(client, url);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(server->config.logger, UA_LOGCATEGORY_CLIENT,
                      "Connecting to client failed with statuscode %s", UA_StatusCode_name(retval));
@@ -1487,7 +1492,8 @@ register_server_with_discovery_server(UA_Server *server, const char* discoverySe
         request.server.semaphoreFilePath = UA_STRING((char*)(uintptr_t)semaphoreFilePath); /* dirty cast */
 #else
         UA_LOG_WARNING(server->config.logger, UA_LOGCATEGORY_CLIENT,
-                       "Ignoring semaphore file path. open62541 not compiled with UA_ENABLE_DISCOVERY_SEMAPHORE=ON");
+                       "Ignoring semaphore file path. open62541 not compiled "
+                       "with UA_ENABLE_DISCOVERY_SEMAPHORE=ON");
 #endif
     }
 
@@ -1532,11 +1538,10 @@ register_server_with_discovery_server(UA_Server *server, const char* discoverySe
 
     UA_StatusCode serviceResult = response.responseHeader.serviceResult;
     UA_RegisterServer2Response_deleteMembers(&response);
-
     UA_ExtensionObject_delete(request.discoveryConfiguration);
 
-
-    if (serviceResult == UA_STATUSCODE_BADNOTIMPLEMENTED || serviceResult == UA_STATUSCODE_BADSERVICEUNSUPPORTED) {
+    if(serviceResult == UA_STATUSCODE_BADNOTIMPLEMENTED ||
+       serviceResult == UA_STATUSCODE_BADSERVICEUNSUPPORTED) {
         // try RegisterServer
         UA_RegisterServerResponse response_fallback;
         UA_RegisterServerResponse_init(&response_fallback);
@@ -1553,7 +1558,8 @@ register_server_with_discovery_server(UA_Server *server, const char* discoverySe
 
         if(response_fallback.responseHeader.serviceResult != UA_STATUSCODE_GOOD) {
             UA_LOG_ERROR(server->config.logger, UA_LOGCATEGORY_CLIENT,
-                         "RegisterServer failed with statuscode %s", UA_StatusCode_name(response_fallback.responseHeader.serviceResult));
+                         "RegisterServer failed with statuscode %s",
+                         UA_StatusCode_name(response_fallback.responseHeader.serviceResult));
             serviceResult = response_fallback.responseHeader.serviceResult;
             UA_RegisterServerResponse_deleteMembers(&response_fallback);
             UA_Client_disconnect(client);
@@ -1562,7 +1568,8 @@ register_server_with_discovery_server(UA_Server *server, const char* discoverySe
         }
     } else if(serviceResult != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(server->config.logger, UA_LOGCATEGORY_CLIENT,
-                     "RegisterServer2 failed with statuscode %s", UA_StatusCode_name(serviceResult));
+                     "RegisterServer2 failed with statuscode %s",
+                     UA_StatusCode_name(serviceResult));
         UA_Client_disconnect(client);
         UA_Client_delete(client);
         return serviceResult;
@@ -1577,15 +1584,17 @@ register_server_with_discovery_server(UA_Server *server, const char* discoverySe
 UA_StatusCode
 UA_Server_register_discovery(UA_Server *server, const char* discoveryServerUrl,
                              const char* semaphoreFilePath) {
-    return register_server_with_discovery_server(server, discoveryServerUrl,
-                                                 UA_FALSE, semaphoreFilePath);
+    return register_server_with_discovery_server(server, discoveryServerUrl, UA_FALSE, semaphoreFilePath);
 }
 
 UA_StatusCode
 UA_Server_unregister_discovery(UA_Server *server, const char* discoveryServerUrl) {
-    return register_server_with_discovery_server(server, discoveryServerUrl,
-                                                 UA_TRUE, NULL);
+    return register_server_with_discovery_server(server, discoveryServerUrl, UA_TRUE, NULL);
 }
+
+/*****************/
+/* Repeated Jobs */
+/*****************/
 
 UA_StatusCode
 UA_Server_addRepeatedJob(UA_Server *server, UA_Job job,
